@@ -151,6 +151,13 @@ async def run_task(client, callback_query):
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
-    keep_alive() # Starts Flask Web Server
-    print("Bot is Running...")
-    app.run()
+    keep_alive()
+    print("Bot is Starting...")
+    
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(app.start())
+    print("Bot Started Successfully!")
+    from pyrogram import idle
+    idle()
+    loop.run_until_complete(app.stop())
+
