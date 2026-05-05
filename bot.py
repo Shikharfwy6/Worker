@@ -151,13 +151,21 @@ async def run_task(client, callback_query):
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
-    keep_alive()
-    print("Bot is Starting...")
-    
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(app.start())
-    print("Bot Started Successfully!")
-    from pyrogram import idle
-    idle()
-    loop.run_until_complete(app.stop())
+    try:
+        keep_alive() # Flask server start karega
+        print("🚀 Bot starting...")
+        
+        # Naye Python versions ke liye manual loop setup
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(app.start())
+        
+        print("✅ Bot is Online and Listening!")
+        
+        from pyrogram import idle
+        idle() # Bot ko tab tak chalu rakhega jab tak aap band na karein
+        
+        loop.run_until_complete(app.stop())
+    except Exception as e:
+        print(f"❌ Main Error: {e}")
+
 
