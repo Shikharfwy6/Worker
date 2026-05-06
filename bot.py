@@ -15,10 +15,9 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "Bot is Online and Running!"
+    return "Bot is Online!"
 
 def run_web():
-    # Render automatically provides a PORT environment variable
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
@@ -27,16 +26,16 @@ def keep_alive():
     t.start()
 
 # --- CONFIGURATION ---
-# Render ke Environment Variables se data lega
 API_ID = int(os.environ.get("API_ID", "12345")) 
 API_HASH = os.environ.get("API_HASH", "your_hash")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_token")
 AROLINKS_API = os.environ.get("AROLINKS_API", "your_arolinks_key")
 
-app = Client("universal_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Environment Variables for Channels
+SOURCE_CHAT = int(os.environ.get("SOURCE_CHAT_ID", "-100...")) 
+TARGET_CHAT = int(os.environ.get("TARGET_CHAT_ID", "-100..."))
 
-# User data storage
-user_data = {}
+app = Client("universal_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # --- HELPER FUNCTIONS ---
 def shorten_link(long_url):
@@ -53,117 +52,76 @@ def shorten_link(long_url):
 
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
-    await message.reply_text("👋 **Universal Bot Active Hai!**\n\nKaam shuru karne ke liye `/generate` command ka use karein.\nFormat: `/generate 20 25`")
+    await message.reply_text(
+        "👋 **Bot Ready Hai!**\n\n"
+        "▶️ **Single Post:** `/g 50` (Sirf ek post ke liye)\n"
+        "▶️ **Multiple Posts:** `/g 50 60` (Range ke liye)"
+    )
 
-@app.on_message(filters.command("generate") & filters.private)
-async def generate_links(client, message):
+@app.on_message(filters.command("g") & filters.private)
+async def handle_generate(client, message):
     try:
         args = message.text.split()
-        if len(args) < 3:
-            return await message.reply_text("❌ Galat Format! Use: `/generate 20 25`")
+        if len(args) < 2:
+            return await message.reply_text("❌ Format: `/g 50` ya `/g 50 60` लिखें।")
 
-        start_val = int(args[1])
-        end_val = int(args[2])
+        # Range Logic
+        if len(args) == 2:
+            start_val = end_val = int(args[1])
+        else:
+            start_val = int(args[1])
+            end_val = int(args[2])
+
+        status = await message.reply_text("⏳ **Process shuru ho raha hai...**")
         
-        status = await message.reply_text("🔗 **Links generate ho rahe hain...**")
-        
-        links_list = []
+        # Current Message ID (Assuming it starts from some base or you send the first ID)
+        # Yahan hum maan ke chal rahe hain ki Source Chat mein Message ID wahi hai jo Video No. hai
+        # Agar aisa nahi hai, to aap code mein thoda badlav kar sakte hain.
+
+        success_count = 0
         for i in range(start_val, end_val + 1):
+            # 1. Generate Link
             long_url = f"https://t.me/Getvideo81827_bot?start={i}"
             short_url = shorten_link(long_url)
-            if short_url:
-                links_list.append(short_url)
-        
-        user_data[message.from_user.id] = {
-            "links": links_list,
-            "start_num": start_val,
-            "step": "awaiting_source"
-        }
+            
+            if not short_url:
+                await message.reply_text(f"⚠️ Link skip hua: {i}")
+                continue
 
-        await status.edit_text(
-            f"✅ **{len(links_list)} Links Taiyaar Hain!**\n\nAb us **Source Channel** ki ID bhejiye jahan se images uthani hain.\nExample: `-1003925609024`"
-        )
+            try:
+                # 2. Get from Source (Assuming Message ID = Video Number)
+                # Note: Agar source message ID alag hai, to yahan offset add karna hoga
+                source_msg = await client.get_messages(SOURCE_CHAT, i)
+                
+                if source_msg and source_msg.photo:
+                    # 3. Send to Target
+                    await client.send_photo(
+                        chat_id=TARGET_CHAT,
+                        photo=source_msg.photo.file_id,
+                        caption=f"✅ **Video No: {i}**\n\n📥 **Download Link:** {short_url}",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download Now", url=short_url)]])
+                    )
+                    success_count += 1
+                    await asyncio.sleep(3) # Anti-flood
+                else:
+                    await message.reply_text(f"❌ ID {i} par photo nahi mili.")
+            except Exception as e:
+                logging.error(f"Error at ID {i}: {e}")
+
+        await status.edit_text(f"✨ **Task Done!**\nTotal {success_count} posts successfully share ho gaye.")
+
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
-
-@app.on_message(filters.private & ~filters.command(["start", "generate"]))
-async def collect_inputs(client, message):
-    uid = message.from_user.id
-    if uid not in user_data:
-        return
-
-    state = user_data[uid].get("step")
-
-    if state == "awaiting_source":
-        user_data[uid]["source_chat"] = int(message.text)
-        user_data[uid]["step"] = "awaiting_target"
-        await message.reply_text("✅ Source Chat Save!\n\nAb us **Target Channel** ki ID bhejiye jahan POST karna hai.")
-
-    elif state == "awaiting_target":
-        user_data[uid]["target_chat"] = int(message.text)
-        user_data[uid]["step"] = "awaiting_msg_id"
-        await message.reply_text("✅ Target Chat Save!\n\nAb pehli **Photo (Message ID)** bhejiye jahan se process shuru karna hai.\nExample: `34`")
-
-    elif state == "awaiting_msg_id":
-        user_data[uid]["msg_id"] = int(message.text)
-        user_data[uid]["step"] = "ready"
-        await message.reply_text(
-            "🚀 **Sab kuch taiyaar hai!**\n\nNiche diya gaya button dabate hi posting shuru ho jayegi.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏁 Start Posting Now", callback_data="start_task")]])
-        )
-
-@app.on_callback_query(filters.regex("start_task"))
-async def run_task(client, callback_query):
-    uid = callback_query.from_user.id
-    data = user_data.get(uid)
-    
-    if not data or data.get("step") != "ready":
-        return await callback_query.answer("Session expired! Fir se shuru karein.", show_alert=True)
-
-    await callback_query.message.edit_text("⏳ **Posting Process Shuru Ho Gaya Hai...**")
-    
-    curr_msg_id = data["msg_id"]
-    
-    for i, link in enumerate(data["links"]):
-        try:
-            # 1. Fetch from source
-            source_msg = await client.get_messages(data["source_chat"], curr_msg_id)
-            
-            if source_msg and source_msg.photo:
-                # 2. Send to target
-                await client.send_photo(
-                    chat_id=data["target_chat"],
-                    photo=source_msg.photo.file_id,
-                    caption=f"✅ Video No: {data['start_num'] + i}\n\n📥 **Download Link:** {link}",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download Now", url=link)]])
-                )
-                curr_msg_id += 1
-                await asyncio.sleep(3) # Anti-flood delay
-            else:
-                await client.send_message(uid, f"⚠️ ID {curr_msg_id} par photo nahi mili. Skipping...")
-                curr_msg_id += 1
-        except Exception as e:
-            await client.send_message(uid, f"❌ Posting Error: {e}")
-            break
-
-    await client.send_message(uid, "✨ **Tasks Completed! Saare posts line se ho gaye hain.**")
-    user_data.pop(uid) # Clear session
 
 # --- MAIN EXECUTION ---
 async def main():
     await app.start()
-    print("✅ Bot is Online and Listening!")
+    print("✅ Bot is Online!")
     from pyrogram import idle
     await idle()
     await app.stop()
 
 if __name__ == "__main__":
-    keep_alive() # Flask server start karega
-    print("🚀 Bot starting...")
+    keep_alive()
     loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    except Exception as e:
-        print(f"❌ Main Error: {e}")
-
-
+    loop.run_until_complete(main())
