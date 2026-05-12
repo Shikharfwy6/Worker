@@ -5,11 +5,12 @@ import requests
 from flask import Flask
 from threading import Thread
 from pyrogram import Client, filters
+from pyrogram.types import Message
 
 # --- LOGGING SETUP ---
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK WEB SERVER (For 24/7 Hosting) ---
+# --- FLASK WEB SERVER ---
 web_app = Flask('')
 @web_app.route('/')
 def home(): return "Bot is Online!"
@@ -26,7 +27,7 @@ API_ID = int(os.environ.get("API_ID", "12345"))
 API_HASH = os.environ.get("API_HASH", "your_hash")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_token")
 AROLINKS_API = os.environ.get("AROLINKS_API", "your_arolinks_key")
-TARGET_CHAT = int(os.environ.get("TARGET_CHAT_ID", "-100..."))
+TARGET_CHAT = int(os.environ.get("TARGET_CHAT_ID", "-100...")) # Aapka Channel ID
 
 app = Client("universal_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -47,37 +48,48 @@ def shorten_link(long_url):
 async def handle_generate(client, message):
     try:
         # Format: /g [start_msg_id] [end_msg_id] [start_count_number]
-        # Example: /g 100 110 1 (Matalab 100 se 110 tak ke links aur ginti 1 se shuru)
         args = message.text.split()
         if len(args) < 4:
-            return await message.reply_text("❌ **Format:** `/g [StartID] [EndID] [StartCount]`\n\nExample: `/g 35 45 1`")
+            return await message.reply_text("❌ **Format sahi nahi hai!**\n\nExample: `/g 128 130 1` \n(Yaha 128 se 130 tak link banenge aur ginti 1 se shuru hogi)")
 
-        start_v = int(args[1])
-        end_v = int(args[2])
-        count_start = int(args[3])
+        start_id = int(args[1])
+        end_id = int(args[2])
+        count_num = int(args[3])
         
-        status = await message.reply_text("🔗 **Links generate aur post ho rahe hain...**")
+        status = await message.reply_text("🔗 **Links process ho rahe hain aur Channel par bheje ja rahe hain...**")
         
         posted_count = 0
-        current_count = count_start
 
-        for i in range(start_v, end_v + 1):
-            l_url = f"https://t.me/Getvideo81827_bot?start={i}"
-            s_url = shorten_link(l_url)
+        for i in range(start_id, end_id + 1):
+            raw_url = f"https://t.me/Getvideo81827_bot?start={i}"
+            short_url = shorten_link(raw_url)
             
-            if s_url:
-                # Text format: 1. https://link.com
-                caption = f"{current_count}. {s_url}"
+            # Agar shortener fail ho jaye toh original link use karega
+            final_link = short_url if short_url else raw_url
+            
+            # Aapke kahe anusar format: "1. [Click Here](link)"
+            # Isse text ke andar link chhup jayega
+            caption = f"{count_num}. [Click Here]({final_link})"
+            
+            try:
+                # Target channel par post karna
+                await client.send_message(
+                    chat_id=TARGET_CHAT, 
+                    text=caption, 
+                    disable_web_page_preview=True # Preview off taaki saaf dikhe
+                )
                 
-                # Direct channel par post karna
-                await client.send_message(chat_id=TARGET_CHAT, text=caption)
-                
-                current_count += 1
+                count_num += 1
                 posted_count += 1
-                await asyncio.sleep(1.5) # Flood wait se bachne ke liye
+                await asyncio.sleep(2) # Flood wait protection
+                
+            except Exception as send_error:
+                logging.error(f"Post error: {send_error}")
 
-        await status.edit_text(f"✅ **Kaam khatam!**\n\nTotal {posted_count} links Target Channel par post kar diye gaye hain.")
+        await status.edit_text(f"✅ **Done!**\n\nTotal {posted_count} posts channel par bhej diye gaye hain.")
 
+    except ValueError:
+        await message.reply_text("❌ Please numbers use karein. Example: `/g 128 130 1`")
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
 
