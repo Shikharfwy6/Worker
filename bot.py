@@ -2,21 +2,23 @@ import os
 import asyncio
 import logging
 import requests
+import time
 from flask import Flask
 from threading import Thread
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 
 # --- LOGGING SETUP ---
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK WEB SERVER ---
+# --- FLASK WEB SERVER (To keep the bot alive) ---
 web_app = Flask('')
 @web_app.route('/')
 def home(): return "Bot is Online!"
 
 def run_web():
-    port = int(os.environ.get("PORT", 8080))
+    # Render default port 10000 use karega, ya 8080
+    port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
@@ -27,12 +29,13 @@ API_ID = int(os.environ.get("API_ID", "12345"))
 API_HASH = os.environ.get("API_HASH", "your_hash")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_token")
 AROLINKS_API = os.environ.get("AROLINKS_API", "your_arolinks_key")
-TARGET_CHAT = int(os.environ.get("TARGET_CHAT_ID", "-100...")) # Aapka Channel ID
+TARGET_CHAT = int(os.environ.get("TARGET_CHAT_ID", "-100...")) # Jaha post karna hai
 
-app = Client("universal_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("link_generator_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # --- HELPER FUNCTIONS ---
 def shorten_link(long_url):
+    """Arolinks se link short karne ke liye"""
     api_url = f"https://arolinks.com/api?api={AROLINKS_API}&url={long_url}"
     try:
         res = requests.get(api_url).json()
@@ -47,53 +50,65 @@ def shorten_link(long_url):
 @app.on_message(filters.command("g") & filters.private)
 async def handle_generate(client, message):
     try:
-        # Format: /g [start_msg_id] [end_msg_id] [start_count_number]
         args = message.text.split()
-        if len(args) < 4:
-            return await message.reply_text("❌ **Format sahi nahi hai!**\n\nExample: `/g 128 130 1` \n(Yaha 128 se 130 tak link banenge aur ginti 1 se shuru hogi)")
-
-        start_id = int(args[1])
-        end_id = int(args[2])
-        count_num = int(args[3])
         
-        status = await message.reply_text("🔗 **Links process ho rahe hain aur Channel par bheje ja rahe hain...**")
-        
-        posted_count = 0
-
-        for i in range(start_id, end_id + 1):
-            raw_url = f"https://t.me/Getvideo81827_bot?start={i}"
-            short_url = shorten_link(raw_url)
+        # CASE 1: Single Video Format -> /g [video_id] [ch_num]
+        if len(args) == 3:
+            video_id = args[1]
+            ch_num = args[2]
             
-            # Agar shortener fail ho jaye toh original link use karega
+            # GetVideo Bot ka URL format (Underscore wala)
+            raw_url = f"https://t.me/Getvideo81827_bot?start={video_id}_{ch_num}"
+            short_url = shorten_link(raw_url)
             final_link = short_url if short_url else raw_url
             
-            # Aapke kahe anusar format: "1. [Click Here](link)"
-            # Isse text ke andar link chhup jayega
-            caption = f"{count_num}. [Click Here]({final_link})"
+            caption = f"🎥 **New Video Uploaded**\n\n🆔 ID: {video_id}\n\n👉 [Click Here to Watch]({final_link})"
             
-            try:
-                # Target channel par post karna
-                await client.send_message(
-                    chat_id=TARGET_CHAT, 
-                    text=caption, 
-                    disable_web_page_preview=True # Preview off taaki saaf dikhe
-                )
-                
-                count_num += 1
-                posted_count += 1
-                await asyncio.sleep(2) # Flood wait protection
-                
-            except Exception as send_error:
-                logging.error(f"Post error: {send_error}")
+            await client.send_message(
+                chat_id=TARGET_CHAT, 
+                text=caption, 
+                disable_web_page_preview=True
+            )
+            await message.reply_text(f"✅ Single link post kar diya gaya hai!\nURL: {final_link}")
 
-        await status.edit_text(f"✅ **Done!**\n\nTotal {posted_count} posts channel par bhej diye gaye hain.")
+        # CASE 2: Bulk Series Format -> /g [start_id] [end_id] [ch_num] [batch_size]
+        elif len(args) == 5:
+            start_id = args[1]
+            end_id = args[2]
+            ch_num = args[3]
+            batch_size = args[4]
+            
+            # GetVideo Bot ka Bulk URL format
+            raw_url = f"https://t.me/Getvideo81827_bot?start={start_id}_{end_id}_{ch_num}_{batch_size}"
+            short_url = shorten_link(raw_url)
+            final_link = short_url if short_url else raw_url
+            
+            caption = f"🎬 **Full Series Available**\n\n📦 Part: {start_id} to {end_id}\n\n👉 [Click Here to Watch All]({final_link})"
+            
+            await client.send_message(
+                chat_id=TARGET_CHAT, 
+                text=caption, 
+                disable_web_page_preview=True
+            )
+            await message.reply_text(f"✅ Bulk series link post kar diya gaya hai!\nURL: {final_link}")
 
-    except ValueError:
-        await message.reply_text("❌ Please numbers use karein. Example: `/g 128 130 1`")
+        else:
+            # Help Message agar format galat ho
+            help_msg = (
+                "❌ **Format Sahi Nahi Hai!**\n\n"
+                "**1. Single Video ke liye:**\n"
+                "`/g 146 1` (VideoID ChannelNum)\n\n"
+                "**2. Bulk Series ke liye:**\n"
+                "`/g 820 831 2 3` (StartID EndID ChannelNum BatchSize)"
+            )
+            await message.reply_text(help_msg)
+
     except Exception as e:
-        await message.reply_text(f"❌ Error: {e}")
+        logging.error(f"Error: {e}")
+        await message.reply_text(f"❌ Kuch error aaya: {e}")
 
-# --- MAIN ---
+# --- START BOT ---
 if __name__ == "__main__":
     keep_alive()
+    print("🚀 Link Generator Bot is running...")
     app.run()
