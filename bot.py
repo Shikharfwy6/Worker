@@ -61,17 +61,37 @@ async def handle_generate(client, message):
             await client.send_message(TARGET_CHAT, caption, disable_web_page_preview=True)
             await message.reply_text("✅ Single link channel par post ho gaya.")
 
-        # Case: Bulk/Batch Link -> /g 820 831 2 3
-        elif len(args) == 5:
+        # Case: Bulk/Batch Link -> /g 253 268 2 3 v Ya i
+        elif len(args) >= 5:
             s_id, e_id, ch_n, b_size = args[1], args[2], args[3], args[4]
+            
+            # Total count calculate karne ke liye
+            total_count = (int(e_id) - int(s_id)) + 1
+            
+            # Check image 'i' or video 'v'
+            media_type = "video" # Default video rahega
+            if len(args) == 6:
+                flag = args[5].lower()
+                if flag == 'i':
+                    media_type = "image"
+                elif flag == 'v':
+                    media_type = "video"
+
             raw_url = f"https://t.me/Getvideo81827_bot?start={s_id}_{e_id}_{ch_n}_{b_size}"
             final_link = shorten_link(raw_url) or raw_url
-            caption = f"🎬 **Full Series ({s_id}-{e_id})**\n\n👉 [Click Here to Watch All]({final_link})"
+            
+            # Naya Post Format
+            caption = (
+                f"🎬 **Full Series ({s_id}-{e_id})**\n\n"
+                f"Total {total_count} {media_type}\n\n"
+                f"👉 [Click Here to Watch All]({final_link})"
+            )
+            
             await client.send_message(TARGET_CHAT, caption, disable_web_page_preview=True)
-            await message.reply_text("✅ Bulk series link post ho gaya.")
+            await message.reply_text(f"✅ Bulk {media_type} series link post ho gaya.")
         
         else:
-            await message.reply_text("❌ Format:\nSingle: `/g 146 1`\nBulk: `/g 820 831 2 3`")
+            await message.reply_text("❌ Format:\nSingle: `/g 146 1`\nBulk: `/g 253 268 2 3 v` ya `/g 253 268 2 3 i`")
 
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
@@ -92,17 +112,14 @@ async def handle_single_loop(client, message):
         status = await message.reply_text(f"⏳ Processing {start_id} to {end_id}...")
 
         for i in range(start_id, end_id + 1):
-            # Create individual link for each video ID
             raw_url = f"https://t.me/Getvideo81827_bot?start={i}_{ch_num}"
             final_link = shorten_link(raw_url) or raw_url
-            
-            # Post one by one: 1. [Click Here](link)
             caption = f"{count}. [Click Here]({final_link})"
             
             try:
                 await client.send_message(TARGET_CHAT, caption, disable_web_page_preview=True)
                 count += 1
-                await asyncio.sleep(2) # Flood protection delay
+                await asyncio.sleep(2) 
             except Exception as post_err:
                 logging.error(f"Post error at ID {i}: {post_err}")
         
@@ -114,5 +131,5 @@ async def handle_single_loop(client, message):
 # --- START ---
 if __name__ == "__main__":
     keep_alive()
-    print("🚀 Bot is running with /g and /single commands...")
+    print("🚀 Bot is running with updated /g and /single commands...")
     app.run()
